@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KI-Rennstrecke</title>
+<style>
+:root{--bg:#0f1115;--panel:#181b22;--line:#2a2f3a;--text:#e8eaf0;--mut:#9aa3b2;--acc:#ffb020;--ok:#3ddc84;--bad:#ff5a5a;--blue:#4da3ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:12px}
+h1{font-size:19px;margin:2px 0 2px}
+.sub{color:var(--mut);font-size:12px;margin:0 0 10px}
+.bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center}
+button{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font:inherit;cursor:pointer}
+button:hover{border-color:#3a4150}
+button.on{border-color:var(--acc);color:var(--acc)}
+button.primary{background:var(--acc);color:#111;border-color:var(--acc);font-weight:600}
+.seg{display:flex;gap:0}
+.seg button{border-radius:0;padding:8px 10px}
+.seg button:first-child{border-radius:8px 0 0 8px}
+.seg button:last-child{border-radius:0 8px 8px 0}
+#cv{width:100%;aspect-ratio:10/7;background:#0b0d10;border:1px solid var(--line);border-radius:10px;touch-action:none;display:block}
+#cv.draw{cursor:crosshair;border-color:var(--acc)}
+#prog{height:4px;background:var(--line);border-radius:2px;overflow:hidden;margin-top:6px}
+#prog div{height:100%;background:var(--acc);width:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px;margin-top:8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.card h2{font-size:13px;margin:0 0 8px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat b{display:block;font-size:19px;font-variant-numeric:tabular-nums}
+.stat span{color:var(--mut);font-size:11px}
+label{display:flex;justify-content:space-between;color:var(--mut);font-size:12px;margin-top:8px}
+input[type=range]{width:100%;accent-color:var(--acc)}
+table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+th{text-align:left;color:var(--mut);font-weight:500;padding:2px 4px}
+td{padding:3px 4px;border-top:1px solid var(--line)}
+.hint{color:var(--mut);font-size:12px;margin-top:6px;min-height:18px}
+ul{margin:0;padding-left:18px}
+li{margin:2px 0}
+.pos{color:var(--ok)}.neg{color:var(--bad)}
+#chart{width:100%;height:130px;display:block}
+.legend{font-size:11px;color:var(--mut);margin-top:4px}
+.legend i{display:inline-block;width:10px;height:3px;vertical-align:middle;margin:0 4px 0 8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>KI-Rennstrecke</h1>
+  <p class="sub">Zeichne eine Strecke. 50 Autos mit je 3 Sensoren lernen per Neuroevolution, sie möglichst schnell zu fahren.</p>
+
+  <div class="bar">
+    <button id="bDraw" class="primary">✏️ Strecke zeichnen</button>
+    <button id="bSample">Beispielstrecke</button>
+    <button id="bPlay">⏸ Pause</button>
+    <button id="bSkip">⏭ Generation beenden</button>
+    <div class="seg" id="speeds">
+      <button data-s="1" class="on">1×</button><button data-s="5">5×</button><button data-s="20">20×</button><button data-s="50">50×</button>
+    </div>
+    <button id="bSens">Alle Sensoren</button>
+    <button id="bReset">KI zurücksetzen</button>
+  </div>
+
+  <canvas id="cv"></canvas>
+  <div id="prog"><div></div></div>
+  <div class="hint" id="hint"></div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Status</h2>
+      <div class="stats">
+        <div class="stat"><b id="sGen">1</b><span>Generation</span></div>
+        <div class="stat"><b id="sAlive">0</b><span>Autos aktiv</span></div>
+        <div class="stat"><b id="sBest">0</b><span>Beste Tokens (Gen)</span></div>
+        <div class="stat"><b id="sRecord">0</b><span>Rekord Tokens</span></div>
+        <div class="stat"><b id="sLaps">0</b><span>Max. Runden</span></div>
+        <div class="stat"><b id="sLap">–</b><span>Beste Rundenzeit</span></div>
+      </div>
+      <label>Streckenbreite <span id="vW">80</span></label>
+      <input type="range" id="rW" min="50" max="130" value="80">
+      <label>Mutationsrate <span id="vM">10 %</span></label>
+      <input type="range" id="rM" min="1" max="40" value="10">
+    </div>
+
+    <div class="card">
+      <h2>Lernkurve</h2>
+      <canvas id="chart"></canvas>
+      <div class="legend"><i style="background:var(--acc)"></i>Bestes Auto <i style="background:var(--blue)"></i>Durchschnitt</div>
+    </div>
+
+    <div class="card">
+      <h2>Top 5 dieser Generation</h2>
+      <table><thead><tr><th>#</th><th>Tokens</th><th>Fortschritt</th><th>Status</th></tr></thead><tbody id="tTop"></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>Token-System (Belohnung)</h2>
+      <ul>
+        <li><span class="pos">+1</span> pro Checkpoint vorwärts (alle 12 px auf der Mittellinie)</li>
+        <li><span class="pos">+0 bis +0,5</span> Tempo-Bonus pro Checkpoint, je schneller desto mehr</li>
+        <li><span class="pos">+½ Runde</span> Bonus für jede volle Runde</li>
+        <li><span class="pos">+5 pro Sekunde</span> Restzeit, wenn ein Auto 3 Runden schafft (Zeitbonus)</li>
+        <li><span class="neg">−5</span> Wandkontakt: Auto ist sofort tot</li>
+        <li><span class="neg">−2</span> Stillstand oder Falschfahrt: Auto wird aussortiert</li>
+      </ul>
+      <p class="hint">Sensoren sehen nur Wände, keine anderen Autos. Autos fahren durcheinander hindurch. Die besten Netze werden übernommen, gekreuzt und mutiert.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+// ---------- Konstanten ----------
+const W = 1000, H = 700;
+const POP = 50;
+const SENS_ANG = [-Math.PI / 4, 0, Math.PI / 4];
+const SENS_LEN = 170;
+const CAR_R = 5;
+const MAX_SPEED = 6, MIN_SPEED = 0.6;
+const SPACING = 12;
+const GEN_STEPS = 60 * 45;   // 45 s Simulationszeit pro Generation
+const STALL = 150;           // 2,5 s ohne Fortschritt -> raus
+const MAX_LAPS = 3;
+const TOK = { cp: 1, speed: 0.5, lap: 0.5, time: 5, crash: 5, stall: 2 };
+const LAYERS = [4, 8, 2];    // 3 Sensoren + Tempo -> 8 versteckt -> Lenken, Gas
+const ELITE = 4, IMMIGRANTS = 2;
+
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const chart = document.getElementById('chart'), cctx = chart.getContext('2d');
+const $ = id => document.getElementById(id);
+
+function fit() {
+  const d = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0);
+  const r = chart.getBoundingClientRect();
+  chart.width = r.width * d; chart.height = r.height * d; cctx.setTransform(d, 0, 0, d, 0, 0);
+  drawChart();
+}
+
+// ---------- Zustand ----------
+let raw = null, track = null;
+let mode = 'race', drawPts = [], pointerDown = false;
+let cars = [], gen = 1, step = 0, running = true, simSpeed = 1, showAll = false;
+let population = null;
+let record = { tokens: -Infinity, brain: null };
+let history = [], bestLap = Infinity, frame = 0;
+let trackWidth = 80, mutRate = 0.10;
+
+// ---------- Neuronales Netz ----------
+function nWeights() { let n = 0; for (let i = 0; i < LAYERS.length - 1; i++) n += (LAYERS[i] + 1) * LAYERS[i + 1]; return n; }
+function randBrain() { const w = new Float32Array(nWeights()); for (let i = 0; i < w.length; i++) w[i] = Math.random() * 2 - 1; return w; }
+function think(w, inp) {
+  let a = inp, k = 0;
+  for (let l = 0; l < LAYERS.length - 1; l++) {
+    const nIn = LAYERS[l], nOut = LAYERS[l + 1], o = new Array(nOut);
+    for (let j = 0; j < nOut; j++) {
+      let s = w[k++];
+      for (let i = 0; i < nIn; i++) s += w[k++] * a[i];
+      o[j] = Math.tanh(s);
+    }
+    a = o;
+  }
+  return a;
+}
+function gauss() { let u = 0; while (!u) u = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random()); }
+function mutate(w, rate, str) { const c = Float32Array.from(w); for (let i = 0; i < c.length; i++) if (Math.random() < rate) c[i] += gauss() * str; return c; }
+function crossover(a, b) { const c = new Float32Array(a.length); for (let i = 0; i < a.length; i++) c[i] = Math.random() < 0.5 ? a[i] : b[i]; return c; }
+
+// ---------- Strecke ----------
+function chaikin(p) {
+  const o = [];
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], b = p[(i + 1) % p.length];
+    o.push({ x: .75 * a.x + .25 * b.x, y: .75 * a.y + .25 * b.y }, { x: .25 * a.x + .75 * b.x, y: .25 * a.y + .75 * b.y });
+  }
+  return o;
+}
+function resample(p, sp) {
+  const L = []; let total = 0;
+  for (let i = 0; i < p.length; i++) { const b = p[(i + 1) % p.length]; const d = Math.hypot(b.x - p[i].x, b.y - p[i].y); L.push(d); total += d; }
+  const n = Math.max(20, Math.round(total / sp)), st = total / n, out = [];
+  let i = 0, acc = 0;
+  for (let k = 0; k < n; k++) {
+    const t = k * st;
+    while (i < p.length - 1 && acc + L[i] < t) { acc += L[i]; i++; }
+    const f = L[i] ? (t - acc) / L[i] : 0, a = p[i], b = p[(i + 1) % p.length];
+    out.push({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+  }
+  return out;
+}
+function pathLength(p) { let s = 0; for (let i = 1; i < p.length; i++) s += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return s; }
+
+function buildTrack(rawPts) {
+  let p = rawPts.slice();
+  for (let k = 0; k < 3; k++) p = chaikin(p);
+  p = resample(p, SPACING);
+  const N = p.length, hw = trackWidth / 2, left = [], right = [];
+  for (let i = 0; i < N; i++) {
+    const a = p[(i - 1 + N) % N], b = p[(i + 1) % N];
+    const tx = b.x - a.x, ty = b.y - a.y, l = Math.hypot(tx, ty) || 1;
+    const nx = -ty / l, ny = tx / l;
+    left.push({ x: p[i].x + nx * hw, y: p[i].y + ny * hw });
+    right.push({ x: p[i].x - nx * hw, y: p[i].y - ny * hw });
+  }
+  const walls = [];
+  for (let i = 0; i < N; i++) { walls.push([left[i], left[(i + 1) % N]], [right[i], right[(i + 1) % N]]); }
+  const startAngle = Math.atan2(p[1].y - p[0].y, p[1].x - p[0].x);
+  const win = Math.ceil((SENS_LEN + 40) / SPACING);
+  return { p, left, right, walls, N, startAngle, win };
+}
+
+function sampleTrack() {
+  const pts = [];
+  for (let i = 0; i < 160; i++) {
+    const t = i / 160 * Math.PI * 2;
+    pts.push({
+      x: 500 + 340 * Math.cos(t) + 60 * Math.cos(3 * t) + 25 * Math.sin(5 * t),
+      y: 350 + 200 * Math.sin(t) + 70 * Math.sin(2 * t) * Math.cos(t) + 35 * Math.sin(4 * t)
+    });
+  }
+  return pts;
+}
+
+// ---------- Geometrie ----------
+function raySeg(ox, oy, dx, dy, a, b) {
+  const ex = b.x - a.x, ey = b.y - a.y, den = dx * ey - dy * ex;
+  if (Math.abs(den) < 1e-9) return Infinity;
+  const qx = a.x - ox, qy = a.y - oy;
+  const t = (qx * ey - qy * ex) / den, u = (qx * dy - qy * dx) / den;
+  return (t >= 0 && u >= 0 && u <= 1) ? t : Infinity;
+}
+function segDist2(px, py, a, b) {
+  const ex = b.x - a.x, ey = b.y - a.y, l2 = ex * ex + ey * ey;
+  let t = l2 ? ((px - a.x) * ex + (py - a.y) * ey) / l2 : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const x = a.x + ex * t - px, y = a.y + ey * t - py;
+  return x * x + y * y;
+}
+// Nur Wände in der Nähe des aktuellen Checkpoints prüfen (schnell).
+// Andere Autos stehen NICHT in dieser Liste: Sensoren erkennen nur Wände.
+function nearWalls(cp, fn) {
+  const { N, walls, win } = track;
+  for (let k = -win; k <= win; k++) {
+    const i = (cp + k + N) % N;
+    if (fn(walls[2 * i]) || fn(walls[2 * i + 1])) return true;
+  }
+  return false;
+}
+
+// ---------- Autos ----------
+function makeCar(brain) {
+  return {
+    x: track.p[0].x, y: track.p[0].y, a: track.startAngle, v: 2, brain,
+    alive: true, finished: false, dead: null,
+    cp: 0, prog: 0, maxProg: 0, stall: 0, tokens: 0, laps: 0, steps: 0,
+    sens: [SENS_LEN, SENS_LEN, SENS_LEN], hue: Math.random() * 360
+  };
+}
+function kill(c, why) {
+  c.alive = false; c.dead = why;
+  c.tokens = Math.max(0, c.tokens - (why === 'crash' ? TOK.crash : TOK.stall));
+}
+function updateCar(c) {
+  if (!c.alive) return;
+  c.steps++;
+  const N = track.N;
+
+  // 3 Sensoren
+  for (let s = 0; s < 3; s++) {
+    const ang = c.a + SENS_ANG[s], dx = Math.cos(ang), dy = Math.sin(ang);
+    let best = SENS_LEN;
+    nearWalls(c.cp, w => { const t = raySeg(c.x, c.y, dx, dy, w[0], w[1]); if (t < best) best = t; return false; });
+    c.sens[s] = best;
+  }
+
+  // Netz entscheidet
+  const out = think(c.brain, [1 - c.sens[0] / SENS_LEN, 1 - c.sens[1] / SENS_LEN, 1 - c.sens[2] / SENS_LEN, c.v / MAX_SPEED]);
+  c.v = (c.v + out[1] * 0.25) * 0.985;
+  c.v = Math.max(MIN_SPEED, Math.min(MAX_SPEED, c.v));
+  c.a += out[0] * 0.08;
+  c.x += Math.cos(c.a) * c.v;
+  c.y += Math.sin(c.a) * c.v;
+
+  // Wandkontakt = tot
+  const r2 = CAR_R * CAR_R;
+  if (nearWalls(c.cp, w => segDist2(c.x, c.y, w[0], w[1]) < r2)) { kill(c, 'crash'); return; }
+
+  // Fortschritt entlang der Mittellinie
+  let bj = c.cp, bd = Infinity;
+  for (let k = -3; k <= 8; k++) {
+    const j = (c.cp + k + N) % N, q = track.p[j];
+    const d = (q.x - c.x) ** 2 + (q.y - c.y) ** 2;
+    if (d < bd) { bd = d; bj = j; }
+  }
+  let delta = bj - c.cp;
+  if (delta > N / 2) delta -= N;
+  if (delta < -N / 2) delta += N;
+  c.prog += delta; c.cp = bj;
+
+  if (c.prog > c.maxProg) {
+    const gained = c.prog - c.maxProg;
+    c.tokens += gained * (TOK.cp + TOK.speed * c.v / MAX_SPEED);
+    c.maxProg = c.prog; c.stall = 0;
+    const laps = Math.floor(c.maxProg / N);
+    if (laps > c.laps) {
+      c.laps = laps; c.tokens += N * TOK.lap;
+      if (laps === 1 && c.steps < bestLap) bestLap = c.steps;
+      if (laps >= MAX_LAPS) { c.alive = false; c.finished = true; c.tokens += (GEN_STEPS - c.steps) / 60 * TOK.time; }
+    }
+  } else {
+    c.stall++;
+    if (c.stall > STALL || c.prog < c.maxProg - 8) kill(c, 'stall');
+  }
+}
+
+// ---------- Evolution ----------
+function startGeneration(brains) { cars = brains.map(makeCar); step = 0; }
+
+function evolve() {
+  const sorted = [...cars].sort((a, b) => b.tokens - a.tokens);
+  const avg = cars.reduce((s, c) => s + c.tokens, 0) / cars.length;
+  history.push({ best: sorted[0].tokens, avg });
+  if (sorted[0].tokens > record.tokens) record = { tokens: sorted[0].tokens, brain: sorted[0].brain };
+
+  const next = [record.brain];                          // Allzeit-Champion bleibt
+  for (let i = 0; i < ELITE && next.length < ELITE + 1; i++)
+    if (sorted[i].brain !== record.brain) next.push(sorted[i].brain);
+
+  const pick = () => {                                   // Turnier-Auswahl (3 Kandidaten)
+    let bi = sorted.length - 1;
+    for (let k = 0; k < 3; k++) bi = Math.min(bi, Math.floor(Math.random() * sorted.length));
+    return sorted[bi].brain;
+  };
+  while (next.length < POP - IMMIGRANTS) {
+    let child = Math.random() < 0.7 ? crossover(pick(), pick()) : Float32Array.from(pick());
+    next.push(mutate(child, mutRate, 0.5));
+  }
+  while (next.length < POP) next.push(randBrain());     // frisches Erbgut gegen Stillstand
+
+  population = next;
+  gen++;
+  startGeneration(population);
+  drawChart();
+}
+
+function resetAI() {
+  population = Array.from({ length: POP }, randBrain);
+  record = { tokens: -Infinity, brain: null };
+  history = []; gen = 1; bestLap = Infinity;
+  if (track) startGeneration(population);
+  drawChart();
+}
+
+function setTrack(pts) {
+  raw = pts;
+  track = buildTrack(raw);
+  record.tokens = -Infinity;   // Rekord gilt pro Strecke, Gehirne bleiben erhalten
+  if (record.brain && population) population[0] = record.brain;
+  bestLap = Infinity; history = []; drawChart();
+  startGeneration(population);
+}
+
+// ---------- Zeichnen per Maus/Touch ----------
+function toWorld(e) {
+  const r = cv.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
+}
+cv.addEventListener('pointerdown', e => {
+  if (mode !== 'draw') return;
+  cv.setPointerCapture(e.pointerId);
+  pointerDown = true; drawPts = [toWorld(e)];
+});
+cv.addEventListener('pointermove', e => {
+  if (!pointerDown) return;
+  const p = toWorld(e), l = drawPts[drawPts.length - 1];
+  if (Math.hypot(p.x - l.x, p.y - l.y) > 6) drawPts.push(p);
+});
+const endDraw = () => {
+  if (!pointerDown) return;
+  pointerDown = false;
+  if (drawPts.length < 15 || pathLength(drawPts) < 400) {
+    hint('Strecke zu kurz. Zeichne eine größere, geschlossene Runde.'); drawPts = []; return;
+  }
+  const a = drawPts[0], b = drawPts[drawPts.length - 1];
+  const gap = Math.hypot(a.x - b.x, a.y - b.y);
+  setTrack(drawPts.slice());
+  drawPts = []; mode = 'race'; cv.classList.remove('draw');
+  running = true; updateButtons();
+  hint(gap > 80 ? 'Start und Ende wurden automatisch verbunden. Die Autos fahren in deiner Zeichenrichtung.' : 'Los geht\'s! Die Autos fahren in deiner Zeichenrichtung.');
+};
+cv.addEventListener('pointerup', endDraw);
+cv.addEventListener('pointercancel', endDraw);
+
+// ---------- Rendering ----------
+function render() {
+  ctx.fillStyle = '#0b0d10'; ctx.fillRect(0, 0, W, H);
+
+  if (track && mode !== 'draw') {
+    const { p, left, right } = track;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath(); p.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath();
+    ctx.strokeStyle = '#1f232b'; ctx.lineWidth = trackWidth; ctx.stroke();
+    ctx.setLineDash([8, 10]); ctx.strokeStyle = '#2d333e'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+    for (const side of [left, right]) {
+      ctx.beginPath(); side.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath();
+      ctx.strokeStyle = '#d9dde6'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    // Startlinie
+    ctx.beginPath(); ctx.moveTo(left[0].x, left[0].y); ctx.lineTo(right[0].x, right[0].y);
+    ctx.strokeStyle = '#ffb020'; ctx.lineWidth = 4; ctx.stroke();
+
+    // Autos
+    let leader = null;
+    for (const c of cars) if (c.alive && (!leader || c.tokens > leader.tokens)) leader = c;
+    for (const c of cars) if (!c.alive) drawCar(c, false);
+    for (const c of cars) if (c.alive && c !== leader) { if (showAll) drawSensors(c, .25); drawCar(c, false); }
+    if (leader) { drawSensors(leader, .9); drawCar(leader, true); }
+
+    ctx.fillStyle = 'rgba(11,13,16,.75)'; ctx.fillRect(10, 10, 220, 28);
+    ctx.fillStyle = '#e8eaf0'; ctx.font = '600 14px system-ui,sans-serif';
+    ctx.fillText(`Gen ${gen} · aktiv ${cars.filter(c => c.alive).length}/${POP}`, 20, 29);
+  }
+
+  if (mode === 'draw') {
+    ctx.fillStyle = '#9aa3b2'; ctx.font = '18px system-ui,sans-serif'; ctx.textAlign = 'center';
+    if (!drawPts.length) ctx.fillText('Zeichne mit Finger oder Maus eine geschlossene Runde', W / 2, H / 2);
+    ctx.textAlign = 'left';
+    if (drawPts.length > 1) {
+      ctx.beginPath(); drawPts.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y));
+      ctx.strokeStyle = 'rgba(255,176,32,.35)'; ctx.lineWidth = trackWidth; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+      ctx.strokeStyle = '#ffb020'; ctx.lineWidth = 2; ctx.stroke();
+      const s = drawPts[0]; ctx.beginPath(); ctx.arc(s.x, s.y, 8, 0, 7); ctx.fillStyle = '#ffb020'; ctx.fill();
+    }
+  }
+}
+function drawSensors(c, alpha) {
+  for (let s = 0; s < 3; s++) {
+    const ang = c.a + SENS_ANG[s], d = c.sens[s];
+    const ex = c.x + Math.cos(ang) * d, ey = c.y + Math.sin(ang) * d;
+    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(ex, ey);
+    ctx.strokeStyle = `rgba(77,163,255,${alpha})`; ctx.lineWidth = 1.2; ctx.stroke();
+    if (d < SENS_LEN) { ctx.beginPath(); ctx.arc(ex, ey, 3, 0, 7); ctx.fillStyle = `rgba(255,90,90,${alpha})`; ctx.fill(); }
+  }
+}
+function drawCar(c, lead) {
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.a);
+  if (!c.alive) ctx.globalAlpha = c.finished ? .6 : .18;
+  ctx.fillStyle = lead ? '#ffb020' : c.finished ? '#3ddc84' : `hsl(${c.hue},65%,62%)`;
+  ctx.fillRect(-9, -4.5, 18, 9);
+  ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(2, -3.5, 4, 7);
+  if (lead) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.strokeRect(-9, -4.5, 18, 9); }
+  ctx.restore();
+}
+
+function drawChart() {
+  const w = chart.clientWidth, h = chart.clientHeight;
+  cctx.clearRect(0, 0, w, h);
+  if (history.length < 1) {
+    cctx.fillStyle = '#9aa3b2'; cctx.font = '12px system-ui,sans-serif';
+    cctx.fillText('Erscheint nach der ersten Generation', 8, h / 2); return;
+  }
+  const max = Math.max(1, ...history.map(x => x.best));
+  const xs = i => history.length === 1 ? w / 2 : 6 + i / (history.length - 1) * (w - 12);
+  const ys = v => h - 14 - v / max * (h - 24);
+  cctx.strokeStyle = '#2a2f3a'; cctx.lineWidth = 1;
+  cctx.beginPath(); cctx.moveTo(0, h - 14); cctx.lineTo(w, h - 14); cctx.stroke();
+  for (const [key, col] of [['avg', '#4da3ff'], ['best', '#ffb020']]) {
+    cctx.beginPath(); history.forEach((x, i) => i ? cctx.lineTo(xs(i), ys(x[key])) : cctx.moveTo(xs(i), ys(x[key])));
+    cctx.strokeStyle = col; cctx.lineWidth = 2; cctx.stroke();
+    if (history.length === 1) { cctx.beginPath(); cctx.arc(xs(0), ys(history[0][key]), 3, 0, 7); cctx.fillStyle = col; cctx.fill(); }
+  }
+  cctx.fillStyle = '#9aa3b2'; cctx.font = '11px system-ui,sans-serif';
+  cctx.fillText(`max ${Math.round(max)} Tokens`, 6, 11);
+  cctx.fillText(`Gen 1 bis ${history.length}`, 6, h - 2);
+}
+
+// ---------- UI ----------
+function hint(t) { $('hint').textContent = t; }
+function updateUI() {
+  if (!track) return;
+  const alive = cars.filter(c => c.alive).length;
+  const sorted = [...cars].sort((a, b) => b.tokens - a.tokens);
+  $('sGen').textContent = gen;
+  $('sAlive').textContent = alive;
+  $('sBest').textContent = Math.round(sorted[0]?.tokens || 0);
+  $('sRecord').textContent = record.tokens > -Infinity ? Math.round(record.tokens) : '–';
+  $('sLaps').textContent = Math.max(0, ...cars.map(c => c.laps));
+  $('sLap').textContent = bestLap < Infinity ? (bestLap / 60).toFixed(1) + ' s' : '–';
+  $('prog').firstElementChild.style.width = (step / GEN_STEPS * 100) + '%';
+  $('tTop').innerHTML = sorted.slice(0, 5).map((c, i) => {
+    const pct = Math.round(c.maxProg / track.N * 100);
+    const st = c.finished ? '<span class="pos">Ziel</span>' : c.alive ? 'fährt' : c.dead === 'crash' ? '<span class="neg">Wand</span>' : '<span class="neg">aussortiert</span>';
+    return `<tr><td>${i + 1}</td><td>${c.tokens.toFixed(1)}</td><td>${pct} %</td><td>${st}</td></tr>`;
+  }).join('');
+}
+function updateButtons() {
+  $('bPlay').textContent = running ? '⏸ Pause' : '▶ Start';
+  $('bSens').classList.toggle('on', showAll);
+}
+
+$('bDraw').onclick = () => { mode = 'draw'; drawPts = []; cv.classList.add('draw'); hint('Startpunkt = Startlinie. Die Zeichenrichtung ist die Fahrtrichtung.'); };
+$('bSample').onclick = () => { mode = 'race'; cv.classList.remove('draw'); setTrack(sampleTrack()); running = true; updateButtons(); hint('Beispielstrecke geladen.'); };
+$('bPlay').onclick = () => { if (mode === 'draw') return; running = !running; updateButtons(); };
+$('bSkip').onclick = () => { if (track && mode !== 'draw') evolve(); };
+$('bSens').onclick = () => { showAll = !showAll; updateButtons(); };
+$('bReset').onclick = () => { resetAI(); hint('KI zurückgesetzt: 50 neue Zufallsnetze.'); };
+document.querySelectorAll('#speeds button').forEach(b => b.onclick = () => {
+  simSpeed = +b.dataset.s;
+  document.querySelectorAll('#speeds button').forEach(x => x.classList.toggle('on', x === b));
+});
+$('rW').oninput = e => {
+  trackWidth = +e.target.value; $('vW').textContent = trackWidth;
+  if (raw && mode !== 'draw') { track = buildTrack(raw); startGeneration(population); }
+};
+$('rM').oninput = e => { mutRate = e.target.value / 100; $('vM').textContent = e.target.value + ' %'; };
+window.addEventListener('resize', fit);
+
+// ---------- Hauptschleife ----------
+function loop() {
+  if (running && track && mode !== 'draw') {
+    for (let s = 0; s < simSpeed; s++) {
+      step++;
+      for (const c of cars) updateCar(c);
+      if (step >= GEN_STEPS || !cars.some(c => c.alive)) { evolve(); break; }
+    }
+  }
+  render();
+  if (frame++ % 6 === 0) updateUI();
+  requestAnimationFrame(loop);
+}
+
+population = Array.from({ length: POP }, randBrain);
+fit();
+setTrack(sampleTrack());
+hint('Beispielstrecke läuft. Tippe auf „Strecke zeichnen“, um deine eigene zu malen.');
+updateButtons();
+loop();
+})();
+</script>
+</body>
+</html>
